@@ -5,13 +5,18 @@ import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.defaultservices.DefaultSingleRecoverable;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-public class V2VServer extends DefaultSingleRecoverable {
+
+public class V2VServerComplete extends DefaultSingleRecoverable {
 
     private Logger logger;
     private HashMap<String, Double> clientsAndFunds;
+
+    private HashMap<String, ClientInformation> clientInfo;
     private HashMap<Integer, BuyOrder> buyOrders = new HashMap<Integer, BuyOrder>();
     private ArrayList<Location> meetingPoints = new ArrayList<Location>();
     private HashMap<Integer, SellOrder> sellOrders = new HashMap<Integer, SellOrder>();
@@ -20,17 +25,17 @@ public class V2VServer extends DefaultSingleRecoverable {
     double feeModifier = 0.01;
     double EVefficiency = 4.5;
 
-    private long startTime;
-    private long numRequests;
-    private double maxThroughput;
-    private Set<Integer> senders;
+    int globalID;
+    private LedgerWriter ledgerWriter;
 
 
-    public V2VServer(int id) {
-        logger = Logger.getLogger(V2VServer.class.getName());
+    public V2VServerComplete(int id) {
+
+        logger = Logger.getLogger(V2VServerComplete.class.getName());
         clientsAndFunds = new HashMap<String, Double>();
+        clientInfo = new HashMap<String, ClientInformation>();
+        globalID = id;
         new ServiceReplica(id, this, this);
-        senders = new HashSet<>(1000);
         Location location1 = new Location(1,1);
         Location location2 = new Location(2,2);
         Location location3 = new Location(3,3);
@@ -48,7 +53,7 @@ public class V2VServer extends DefaultSingleRecoverable {
             System.out.println("Usage: demo.map.MapServer <server id>");
             System.exit(-1);
         }
-        new V2VServer(Integer.parseInt(args[0]));
+        new V2VServerComplete(Integer.parseInt(args[0]));
     }
 
 
@@ -91,8 +96,6 @@ public class V2VServer extends DefaultSingleRecoverable {
             int xpos = 0;
             int ypos = 0;
             String output = "";
-            numRequests ++;
-            senders.add(msgCtx.getSender());
             switch (reqType) {
                 case REGISTER:
                     clientID = (String)objIn.readObject();
@@ -172,28 +175,11 @@ public class V2VServer extends DefaultSingleRecoverable {
         } catch (IOException | ClassNotFoundException e) {
             logger.log(Level.SEVERE, "Ocurred during server operation execution", e);
         }
-        printMeasurement();
 
         return reply;
     }
 
-    private void printMeasurement() {
-        long currentTime = System.nanoTime();
-        double deltaTime = (currentTime - startTime) / 1_000_000_000.0;
-        if (true) {
-            long delta = currentTime - startTime;
-            double throughput = numRequests / deltaTime;
-            if (throughput > maxThroughput)
-                maxThroughput = throughput;
-            System.out.println("M:(clients[" + senders.size() + "]|requests[" + numRequests + "]|delta[" + delta + "]|throughput[" + throughput + "ops/s], max[" + maxThroughput + "ops/s])");
-            numRequests = 0;
-            startTime = currentTime;
-            senders.clear();
-        }
-    }
-
-
-    private String buyOrder(String clientID, int units, int xpos, int ypos, double originalprice) {
+    private String buyOrder(String clientID, int units, int xpos, int ypos, double originalprice) throws IOException {
         BuyOrder order = new BuyOrder(clientID, units, xpos, ypos, originalprice);
         int thisOrderID = buyOrderId;
         this.buyOrderId = this.buyOrderId + 1;
@@ -235,6 +221,7 @@ public class V2VServer extends DefaultSingleRecoverable {
                     " UNITPRICE: " + bestSeller.unitPrice + " CONSUMERCOSTPERUNIT: " + match.consumerCost + " PROVIDERPROFITPERUNIT: " + match.providerProfit;
             buyOrders.remove(match.buyOrder);
             sellOrders.remove(match.sellOrder);
+            ledgerWriter.write(output);
             return output;
         } else {
             return "NO MATCH FOUND CURRENTLY, INSERTING INTO SYSTEM";

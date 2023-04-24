@@ -3,7 +3,7 @@ package bftsmart.demo.v2vapp;
 
 import java.util.Scanner;
 
-public class V2VInteractiveClient {
+public class V2VInteractiveClientComplete {
 
     public static void main(String[] args) {
         if(args.length < 1) {
